@@ -1,13 +1,13 @@
-import os
+import tempfile
 import torch
-import rumps
-import chemdraw
-from datetime import datetime
+from pathlib import Path
+from collections.abc import Callable
 
 
 import selfies as sf
 from rdkit import Chem
-from smiles_operations import augemnt_smiles, canonicalize_smiles, remove_atom_mapping
+from rdkit.Chem import Draw
+from smiles_operations import augment_smiles, canonicalize_smiles, remove_atom_mapping
 
 from utils import create_filename_from_smiles
 from api_conversions import smiles_to_cas_api, smiles_to_iupac_api, iupac_to_smiles_api, cas_to_smiles_api
@@ -15,10 +15,19 @@ from vendors import Vendors, Enamine, ChemieBrunschwieg
 
 
 class Converter():
-    def __init__(self, model, image_input_dir, image_generated_dir):
+    def __init__(
+        self,
+        model,
+        image_input_dir,
+        image_generated_dir,
+        notification_callback: Callable[[str, str, str], None] | None = None,
+    ):
         self.model = model
         self.image_input_dir = image_input_dir
         self.image_generated_dir = image_generated_dir
+        self.notification_callback = notification_callback
+        self.image_input_dir.mkdir(parents=True, exist_ok=True)
+        self.image_generated_dir.mkdir(parents=True, exist_ok=True)
         self.image_confidence_level = 0.66
 
         self.vendors = Vendors([Enamine(), ChemieBrunschwieg()])
@@ -71,26 +80,36 @@ class Converter():
             return False
 
     def image_to_smiles(self, image, image_or_path='image'):
+        temporary_file = None
         if image_or_path == 'image':
-            timestamp = datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-            file_name = f'{timestamp}_clipboard_image.png'
-            file_path = self.image_input_dir / file_name
-            image.save(file_path, "PNG")
+            with tempfile.NamedTemporaryFile(
+                    suffix=".png", dir=self.image_input_dir, delete=False) as temp_file:
+                temporary_file = Path(temp_file.name)
+            file_path = temporary_file
         else:
-            file_path = image
-        with torch.no_grad():
-            output = self.model.predict_image_file(
-                str(file_path), return_atoms_bonds=False, return_confidence=True)
-        smiles = output['smiles']
-        confidence = output['confidence']
+            file_path = Path(image)
 
-        os.remove(file_path)
+        try:
+            if temporary_file is not None:
+                image.save(temporary_file, "PNG")
+            with torch.no_grad():
+                output = self.model.predict_image_file(
+                    str(file_path), return_atoms_bonds=False, return_confidence=True)
+            smiles = output['smiles']
+            confidence = output['confidence']
+        finally:
+            if temporary_file is not None:
+                temporary_file.unlink(missing_ok=True)
+
         if confidence > self.image_confidence_level:
             return smiles
-        else:
-            rumps.notification(
-                '🔁 Confidence lower than: '+str(self.image_confidence_level), 'Retake screenshot', f"Proposed SMILES: {smiles}", sound=False, icon='pictograms/carlos_helper_bad.png')
-            return False
+        if self.notification_callback is not None:
+            self.notification_callback(
+                "Low-confidence structure",
+                "Retake screenshot",
+                f"Confidence below {self.image_confidence_level:.2f}. Proposed SMILES: {smiles}",
+            )
+        return False
 
     def smiles_to_smiles(self, smiles):
         return smiles
@@ -98,17 +117,18 @@ class Converter():
     def inchi_to_smiles(self, inchi):
         try:
             mol = Chem.MolFromInchi(inchi)
-            if mol is not None:
-                smiles = Chem.MolToSmiles(mol)
-                return smiles
+            if mol is None:
+                return False
+            return Chem.MolToSmiles(mol)
         except:
             return False
 
     def mol_to_smiles(self, mol):
         try:
-            smiles = Chem.MolToSmiles(Chem.MolFromMolBlock(mol))
-            print(smiles)
-            return smiles
+            molecule = Chem.MolFromMolBlock(mol)
+            if molecule is None:
+                return False
+            return Chem.MolToSmiles(molecule)
 
         except:
             return False
@@ -136,10 +156,12 @@ class Converter():
             return False
 
     def smiles_to_image(self, smiles):
-        file_name, timestamp = create_filename_from_smiles(smiles)
-        drawer = chemdraw.Drawer(smiles)
+        file_name, _ = create_filename_from_smiles(smiles)
+        molecule = Chem.MolFromSmiles(smiles)
+        if molecule is None:
+            return False
         image_path = self.image_generated_dir / file_name
-        drawer.draw_img(image_path)
+        Draw.MolToFile(molecule, str(image_path), imageType="png")
         return image_path
 
     def smiles_to_price(self, smiles):
@@ -153,11 +175,13 @@ class Converter():
             selfies = sf.encoder(smiles)
             return selfies
         except:
-            False
+            return False
 
     def smiles_to_mol(self, smiles):
         try:
             mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return False
             mol_string = Chem.MolToMolBlock(mol)
             return mol_string
         except:
@@ -166,6 +190,8 @@ class Converter():
     def smiles_to_inchi(self, smiles):
         try:
             mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return False
             inchi = Chem.MolToInchi(mol)
             return inchi
         except:
@@ -180,10 +206,7 @@ class Converter():
             return False
 
     def smiles_canonicalize(self, smiles):
-        # try:
         return canonicalize_smiles(smiles)
-        # except:
-        #     return False
 
     def smiles_standardize(self, smiles):
         try:
@@ -193,6 +216,6 @@ class Converter():
 
     def smiles_augment(self, smiles):
         try:
-            return augemnt_smiles(smiles)
+            return augment_smiles(smiles)
         except:
             return False

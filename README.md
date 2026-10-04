@@ -1,5 +1,5 @@
 # Clipboard-to-SMILES-Converter
-Clipboard-to-SMILES-Converter is a lightweight macOS app designed to simplify the conversion process between a variety of chemical notations for chemical structures, such as Images of Molecules, SMILES, SELFIES, RdKit Mols, InChI, CAS numbers, and IUPAC directly in the clipboard.
+Clipboard-to-SMILES-Converter converts between images of molecules, SMILES, SELFIES, RDKit Mol files, InChI, CAS numbers, and IUPAC names directly from the clipboard. The macOS version uses a status-bar app; a Windows system-tray frontend is also available.
 
 It automatically detects the format used to represent the molecule in the clipboard and converts it with a click of a button to the desired format.
 
@@ -59,6 +59,27 @@ Install the required dependencies by running the following command:
 ```
 pip install -r requirements.txt 
 ```
+The `rumps` status-bar dependency and its PyObjC requirements are installed only on macOS. Windows installs PySide6 for its system-tray frontend. MolScribe 1.1.1 requires NumPy below 2; OpenCV is capped below 4.12 to keep its NumPy requirement compatible.
+
+### Run on Windows
+Install the requirements in the activated environment, then download the MolScribe weights into the expected folder:
+
+```powershell
+python -m pip install -r requirements.txt
+python ModelDownload.py
+python clipboard2smiles_windows.py
+```
+
+The Windows frontend opens a small main window and also runs in the system tray; the same menu is available from the window or by right-clicking the tray icon. It uses the Hugging Face cache directly, so the model does not need to be copied into the project. It stores history, generated images, and the image queue under `%LOCALAPPDATA%\Clipboard2Smiles`. It supports clipboard conversions and monitoring, image collection and batch processing, history conversions and molecular properties, vendor price lookup, and sharing/links. Once set up, double-click `Launch Clipboard2Smiles.bat` in the project folder to start the app. The launcher log is saved to `%LOCALAPPDATA%\Clipboard2Smiles\launcher.log`.
+
+To build a Windows onedir package, first install PyInstaller and download the model as above. The model weights are included in the built application, which can make the output large. Run:
+
+```powershell
+python -m pip install PyInstaller
+python pyinstaller_config_win.py
+```
+
+Distribute the complete `dist\Clipboard2Smiles` folder.
 
 To get more details about the underlaying model architecture refer to [MolScribe](https://github.com/thomas0809/MolScribe)
 
@@ -91,14 +112,13 @@ You can run the application directly using the following command:
 python clipboard2smiles.py
 ```
 
-### Build the App
+### Build the macOS App
 To build the application, use the following command:
 
 ```
 python setup.py py2app
 ```
-This will create the necessary executable or bundle based on your operating system.
-You may need to change the iconfile paramters in the setup.py file. If you are compiling the app on an Apple Silicon (M1, M2 etc.) see the FAQ of py2app to get the instruction to compile it for x86 architecture.
+Build the app on macOS; `setup.py` uses the project icon at `pictograms/carlos_helper_logo.icns`. If you are compiling the app on Apple Silicon (M1, M2, etc.), see the py2app FAQ for instructions on compiling it for x86 architecture.
 
 
 ## Functionality Overview

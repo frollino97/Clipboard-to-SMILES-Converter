@@ -60,7 +60,9 @@ class ClipboardImageSaverApp(rumps.App):
 
         # Create Converter class
         self.converter = Converter(model=self.model,
-                                   image_input_dir=self.image_input_dir, image_generated_dir=self.image_generated_dir)
+                                   image_input_dir=self.image_input_dir,
+                                   image_generated_dir=self.image_generated_dir,
+                                   notification_callback=self.notify_low_confidence)
 
         # Create menu items for chemical structure conversion
         self.to_smiles_button = rumps.MenuItem(
@@ -203,6 +205,16 @@ class ClipboardImageSaverApp(rumps.App):
             elif info.data == 'open_purchase_link':
                 os.system("open \"\" " + self.purchase_link)
 
+    @staticmethod
+    def notify_low_confidence(title, subtitle, message):
+        rumps.notification(
+            title,
+            subtitle,
+            message,
+            sound=False,
+            icon='pictograms/carlos_helper_bad.png',
+        )
+
     def select_vendor(self, sender):
         self.converter.vendors.select_vendor(sender.title.replace(' ', ''))
         for menu_item in self.options_button['Select Vendor']:
@@ -289,6 +301,8 @@ class ClipboardImageSaverApp(rumps.App):
 
     def clipboard_to(self, sender, output_format):
         clipboard_input = self.clipboard_content_identification()
+        if clipboard_input is None:
+            return None
         # Only do the check if the last clipboard was the same as previous if the called by a Timer
         if self.last_clipboard_cache == clipboard_input['content'] and isinstance(sender, rumps.Timer):
             print('same cache',

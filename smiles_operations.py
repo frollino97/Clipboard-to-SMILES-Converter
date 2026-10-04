@@ -18,11 +18,10 @@ def remove_atom_mapping(smiles: str) -> str:
         A SMILES string without atom mapping information.
     """
 
-    # We look for ":" followed by digits before a "]" not coming after an "*"
-    return re.sub(r"(?<=[^\*])(:\d+)]", "]", smiles)
+    return re.sub(r":\d+(?=\])", "", smiles)
 
 
-def canonicalize_smiles(smiles):
+def canonicalize_smiles(smiles: str) -> str | None:
     """
     Canonicalizes a SMILES string.
 
@@ -33,20 +32,26 @@ def canonicalize_smiles(smiles):
         str: The canonicalized SMILES string.
 
     """
+    if smiles.count(">") == 2:
+        try:
+            reaction = AllChem.ReactionFromSmarts(smiles)
+        except ValueError:
+            return None
+        if reaction is None or not reaction.GetReactants() or not reaction.GetProducts():
+            return None
+
+        reactant_smiles = ".".join(
+            Chem.MolToSmiles(mol) for mol in reaction.GetReactants())
+        agents_smiles = ".".join(
+            Chem.MolToSmiles(mol) for mol in reaction.GetAgents())
+        product_smiles = ".".join(
+            Chem.MolToSmiles(mol) for mol in reaction.GetProducts())
+        return ">".join((reactant_smiles, agents_smiles, product_smiles))
+
     mol = Chem.MolFromSmiles(smiles)
     if mol is not None:
         return Chem.MolToSmiles(mol)
-
-    rxn = AllChem.ReactionFromSmarts(smiles)
-    if rxn is not None:
-        reactant_smiles = '.'.join([Chem.MolToSmiles(mol)
-                                   for mol in rxn.GetReactants()])
-        agents_smiles = '.'.join([Chem.MolToSmiles(mol)
-                                 for mol in rxn.GetAgents()])
-        prod_smiles = '.'.join([Chem.MolToSmiles(mol)
-                               for mol in rxn.GetProducts()])
-
-    return '>'.join([reactant_smiles, agents_smiles, prod_smiles])
+    return None
 
 
 def randomize_smiles(smiles, random_type="restricted", isomericSmiles=True):
@@ -79,7 +84,7 @@ def randomize_smiles(smiles, random_type="restricted", isomericSmiles=True):
     raise ValueError("Type '{}' is not valid".format(random_type))
 
 
-def augemnt_smiles(smiles: str):
+def augment_smiles(smiles: str):
     """ Creates augmented SMILES string.
 
     Args:
@@ -88,11 +93,23 @@ def augemnt_smiles(smiles: str):
     Returns:
         str: augemented SMILES
     """
-    if '>' in smiles:
-        smiles_junks = smiles.split('>')
-        result = []
-        for junks in smiles_junks:
-            result.append(randomize_smiles(junks))
-        return '>'.join(result)
-    else:
+    if ">" not in smiles:
         return randomize_smiles(smiles)
+
+    reaction_parts = smiles.split(">")
+    if len(reaction_parts) != 3:
+        return None
+
+    randomized_parts = []
+    for part in reaction_parts:
+        if not part:
+            randomized_parts.append("")
+            continue
+        randomized = randomize_smiles(part)
+        if randomized is None:
+            return None
+        randomized_parts.append(randomized)
+    return ">".join(randomized_parts)
+
+
+augemnt_smiles = augment_smiles
